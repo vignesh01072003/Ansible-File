@@ -1,0 +1,128 @@
+---
+- name: Install and configure Tomcat on Amazon Linux 2
+  hosts: tomcat
+  become: yes
+  tasks:
+
+    - name: Update the system packages
+      yum:
+        name: "*"
+        state: latest
+
+    - name: Install Java (OpenJDK 11)
+      yum:
+        name: java-11-openjdk
+        state: present
+
+    - name: Create a group for Tomcat
+      group:
+        name: tomcat
+        state: present
+
+    - name: Create a user for Tomcat
+      user:
+        name: tomcat
+        group: tomcat
+        home: /opt/tomcat
+        shell: /bin/nologin
+        state: present
+
+    - name: Download Apache Tomcat
+      get_url:
+        url: https://dlcdn.apache.org/tomcat/tomcat-9/v9.0.93/bin/apache-tomcat-9.0.93.tar.gz
+        dest: /tmp/apache-tomcat-9.0.93.tar.gz
+
+    - name: Create the Tomcat installation directory
+      file:
+        path: /opt/tomcat
+        state: directory
+        owner: tomcat
+        group: tomcat
+        mode: '0755'
+
+    - name: Extract Tomcat to the installation directory
+      unarchive:
+        src: /tmp/apache-tomcat-9.0.93.tar.gz
+        dest: /opt/tomcat
+        remote_src: yes
+        owner: tomcat
+        group: tomcat
+        mode: '0755'
+
+    - name: Update permissions for the Tomcat installation
+      file:
+        path: /opt/tomcat/apache-tomcat-9.0.93
+        state: directory
+        recurse: yes
+        owner: tomcat
+        group: tomcat
+
+    - name: Create a systemd service for Tomcat
+      copy:
+        dest: /etc/systemd/system/tomcat.service
+        content: |
+          [Unit]
+          Description=Apache Tomcat Web Application Container
+          After=network.target
+
+          [Service]
+          Type=forking
+          User=tomcat
+          Group=tomcat
+          Environment="JAVA_HOME=/usr/lib/jvm/jre"
+          Environment="CATALINA_PID=/opt/tomcat/apache-tomcat-9.0.93/temp/tomcat.pid"
+          Environment="CATALINA_HOME=/opt/tomcat/apache-tomcat-9.0.93"
+          Environment="CATALINA_BASE=/opt/tomcat/apache-tomcat-9.0.93"
+          ExecStart=/opt/tomcat/apache-tomcat-9.0.93/bin/startup.sh
+          ExecStop=/opt/tomcat/apache-tomcat-9.0.93/bin/shutdown.sh
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Start Tomcat service
+      ansible.builtin.service:
+        name: httpd
+        state: started
+        enabled: yes
+
+    - name: Open port 8080 in the firewall
+      firewalld:
+        port: 8080/tcp
+        permanent: true
+        state: enabled
+      when: ansible_distribution == "Amazon"
+          
+    - name: Ensure Tomcat is running
+      systemd:
+        name: tomcat
+        state: started
+        enabled: yes
+
+    - name: Wait for Tomcat to be accessible
+      uri:
+        url: http://localhost:8080
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 5
+      delay: 10
+    - name: Deploy Java application to Tomcat
+      copy:
+        src: /home/ec2-user/sample.war
+        dest: /opt/tomcat/apache-tomcat-9.0.93/webapps/sample.war
+        owner: tomcat
+        group: tomcat
+        mode: '0644'
+  
+    - name: Restart Tomcat
+      systemd:
+         name: tomcat
+         state: restarted
+
+    
+     

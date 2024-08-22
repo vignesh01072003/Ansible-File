@@ -1,0 +1,22 @@
+---
+- name: Install and manage firewalld on Amazon Linux
+  hosts: all
+  become: yes
+  tasks:
+    - name: Install firewalld
+      yum:
+        name: firewalld
+        state: present
+
+    - name: Ensure firewalld is running and enabled
+      service:
+        name: firewalld
+        state: started
+        enabled: yes
+
+    - name: Allow HTTP service through firewalld
+      command: firewall-cmd --permanent --add-service=http
+
+    - name: Reload firewalld to apply changes
+      command: firewall-cmd --reload
+
